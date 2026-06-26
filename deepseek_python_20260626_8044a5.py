@@ -1,4 +1,4 @@
-# app.py - 完整版（历史记录缓存版本）
+# app.py - 最终版
 import streamlit as st
 import requests
 import json
@@ -58,9 +58,12 @@ if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
 if 'row_status' not in st.session_state:
     st.session_state.row_status = {}
-# 缓存历史记录，只在第一次加载时读取
+# 🔑 历史记录缓存 - 只在页面首次加载时从文件读取
 if 'history_display' not in st.session_state:
     st.session_state.history_display = load_history()
+# 标记是否允许刷新历史记录（默认不允许）
+if 'allow_history_refresh' not in st.session_state:
+    st.session_state.allow_history_refresh = False
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
@@ -102,7 +105,11 @@ research_question = st.text_area(
     height=100
 )
 
-# 显示历史记录（使用缓存，不实时读取文件）
+# 显示历史记录（使用缓存，除非允许刷新）
+if st.session_state.allow_history_refresh:
+    st.session_state.history_display = load_history()
+    st.session_state.allow_history_refresh = False
+
 history = st.session_state.history_display
 if history:
     latest = history[0]
@@ -110,6 +117,8 @@ if history:
     st.caption(f"📜 最近输入：{display_text}")
     if st.button("📝 点击使用", key="use_latest"):
         st.session_state.research_question = latest
+        # 允许刷新历史记录（点击"点击使用"时刷新）
+        st.session_state.allow_history_refresh = True
         st.rerun()
 
 if st.button("确认研究问题", type="primary"):
@@ -119,8 +128,7 @@ if st.button("确认研究问题", type="primary"):
         current_history = load_history()
         if not current_history or current_history[0] != research_question.strip():
             save_history(research_question.strip())
-            # 更新缓存（这样下次点击"点击使用"时显示新内容）
-            st.session_state.history_display = load_history()
+            # 🔑 关键：不更新缓存，不刷新界面
         st.session_state.step = 2
         st.rerun()
     else:
