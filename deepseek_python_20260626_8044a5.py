@@ -7,7 +7,43 @@ try:
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "python-docx"])
     import docx
+# app.py
+import streamlit as st
+import subprocess
+import sys
+import os
+
+# ============ 自动安装缺失的包 ============
+def ensure_package_installed(package_name, import_name=None):
+    """确保某个包已安装，如果未安装则自动安装"""
+    if import_name is None:
+        import_name = package_name
     
+    try:
+        __import__(import_name)
+        return True
+    except ImportError:
+        st.warning(f"正在安装 {package_name}...")
+        try:
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", package_name
+            ])
+            __import__(import_name)
+            st.success(f"✅ {package_name} 安装成功")
+            return True
+        except Exception as e:
+            st.error(f"❌ {package_name} 安装失败: {e}")
+            return False
+
+# 检查并安装关键依赖
+packages_to_check = [
+    ("python-docx", "docx"),
+    ("requests", "requests"),
+    ("pandas", "pandas"),
+]
+
+for pkg, import_name in packages_to_check:
+    ensure_package_installed(pkg, import_name)    
 # app.py
 import streamlit as st
 import requests
