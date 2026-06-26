@@ -187,20 +187,20 @@ if st.session_state.step >= 3:
 1. 所有分析必须基于访谈原文
 2. 不得推测受访者未明确表达的内容
 3. 如果资料不足，请明确写出：【资料不足，无法判断】
-4. **【重要】Memo_hint 和 memo_reason 仅在以下情况填写：**
-   - 该段落包含多个层次的含义，需要进一步分析
-   - 该段落与其他段落存在潜在关联，值得标记
-   - 该段落揭示了超出表面含义的深层逻辑
-   - 其他情况，请留空字符串 ""
-5. **不要**为每个条目都生成Memo，仅在真正有价值时才填写
+
+## Memo生成指南
+对于每个编码条目，请评估是否需要生成Memo：
+- **需要Memo的情况**：该段落揭示了超出字面的深层含义、涉及多重关联、或具有典型分析价值
+- **不需要Memo的情况**：内容较为直接明了，无特别的分析线索
+- 请适度生成Memo，既不过度（避免为每个条目都生成），也不过于保守
 
 ## 输出格式
 请以JSON数组格式输出，每个对象包含：
 - id: 序号（从1开始）
 - quote: 原文引用
 - ai_code: 建议编码（简洁的关键词）
-- memo_hint: 备注提示（仅在真正有价值时填写，否则留空）
-- memo_reason: 备注原因（仅在真正有价值时填写，否则留空）
+- memo_hint: 备注提示（简要概括分析线索，若无则留空）
+- memo_reason: 备注原因（说明分析价值，若无则留空）
 
 ## 研究问题
 {st.session_state.research_question}
@@ -293,6 +293,26 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
     
     st.divider()
     
+    # 自定义CSS：按钮文字颜色
+    st.markdown("""
+    <style>
+    /* 采用按钮 - 绿色 */
+    div[data-testid="stButton"] button:has(div:contains("采用")) {
+        color: #2E7D32 !important;
+        font-weight: 500 !important;
+    }
+    /* 删除按钮 - 灰色 */
+    div[data-testid="stButton"] button:has(div:contains("删除")) {
+        color: #757575 !important;
+    }
+    /* 自定义按钮 - 橘红色 */
+    div[data-testid="stButton"] button:has(div:contains("自定义")) {
+        color: #E65100 !important;
+        font-weight: 500 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     for idx, row in df.iterrows():
         status = st.session_state.row_status.get(idx, "待审核")
         
@@ -317,26 +337,28 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
                 
                 if row.get("AI Memo提示") and str(row["AI Memo提示"]) != "" and str(row["AI Memo提示"]) != "nan":
                     st.caption(f"💡 Memo提示: {row['AI Memo提示']}")
+                if row.get("AI Memo说明") and str(row["AI Memo说明"]) != "" and str(row["AI Memo说明"]) != "nan":
+                    st.caption(f"📝 Memo说明: {row['AI Memo说明']}")
             
             with col_right:
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 
                 with btn_col1:
-                    if st.button(f"✅ 采用", key=f"adopt_{idx}"):
+                    if st.button("采用", key=f"adopt_{idx}"):
                         df.at[idx, "研究者编码"] = row["AI建议编码"]
                         st.session_state.row_status[idx] = "已审核"
                         st.session_state.df = df
                         st.rerun()
                 
                 with btn_col2:
-                    if st.button(f"🗑️ 删除", key=f"delete_{idx}"):
+                    if st.button("删除", key=f"delete_{idx}"):
                         st.session_state.row_status[idx] = "已删除"
                         df.at[idx, "研究者编码"] = "（已删除）"
                         st.session_state.df = df
                         st.rerun()
                 
                 with btn_col3:
-                    if st.button(f"✏️ 自定义", key=f"custom_{idx}"):
+                    if st.button("自定义", key=f"custom_{idx}"):
                         st.session_state[f"custom_mode_{idx}"] = not st.session_state.get(f"custom_mode_{idx}", False)
                         st.rerun()
             
@@ -359,29 +381,11 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
     
     st.session_state.df = df
     
+    # 底部：只保留"生成正式报告"按钮，居左
     st.divider()
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        df_export = df.copy()
-        df_export = df_export[df_export.index.map(lambda x: st.session_state.row_status.get(x, "待审核") != "已删除")]
-        if len(df_export) > 0:
-            # 修复CSV乱码：手动添加BOM头
-            csv_raw = df_export.to_csv(index=False, encoding='utf-8')
-            csv_data = '\ufeff' + csv_raw
-            st.download_button(
-                label="📥 导出CSV编码表",
-                data=csv_data,
-                file_name=f"GeoFieldAI_coding_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv; charset=utf-8"
-            )
-        else:
-            st.warning("没有可导出的编码")
-    
-    with col2:
-        if st.button("📄 生成正式报告", type="primary"):
-            st.session_state.step = 5
-            st.rerun()
+    if st.button("📄 生成正式报告", type="primary"):
+        st.session_state.step = 5
+        st.rerun()
 
 # ==================== Step 5: 报告 ====================
 if st.session_state.step >= 5 and st.session_state.df is not None:
