@@ -231,7 +231,7 @@ if st.session_state.step >= 3:
     if not st.session_state.analysis_complete:
         with st.spinner("AI分析中，请稍候..."):
             try:
-                # 使用 .format() 方法，避免 f-string 解析问题
+                # 使用 .format() 方法
                 prompt_template = """
 # GeoField AI V2：证据导向型田野资料分析 Prompt
 
@@ -371,28 +371,64 @@ memo_reason：
                     analysis = re.sub(r'```\s*', '', analysis)
                     analysis = analysis.strip()
                     
-                    # 2. 尝试提取 JSON 数组（如果内容中包含）
-                    json_match = re.search(r'\[\s*\{.*\}\s*\]', analysis, re.DOTALL)
-                    if json_match:
-                        analysis = json_match.group()
+                    # 2. 提取JSON数组 - 找到第一个 '[' 和最后一个 ']'
+                    start = analysis.find('[')
+                    end = analysis.rfind(']')
+                    if start != -1 and end != -1 and end > start:
+                        analysis = analysis[start:end+1]
+                    else:
+                        # 如果找不到数组，尝试找对象
+                        start = analysis.find('{')
+                        end = analysis.rfind('}')
+                        if start != -1 and end != -1 and end > start:
+                            analysis = '[' + analysis[start:end+1] + ']'
                     
                     # 3. 尝试解析
                     try:
                         data = json.loads(analysis)
                     except json.JSONDecodeError:
-                        # 如果还是失败，尝试更宽松的清理
-                        analysis_cleaned = re.sub(r'[^\{\}\[\],:\"\w\s\.\-]', '', analysis)
-                        json_match = re.search(r'\[\s*\{.*\}\s*\]', analysis_cleaned, re.DOTALL)
-                        if json_match:
-                            analysis_cleaned = json_match.group()
-                            data = json.loads(analysis_cleaned)
-                        else:
-                            json_match = re.search(r'\{.*\}', analysis, re.DOTALL)
-                            if json_match:
-                                single_obj = json_match.group()
-                                data = [json.loads(single_obj)]
-                            else:
-                                raise json.JSONDecodeError("无法解析AI返回的内容", analysis, 0)
+                        # 如果还是失败，尝试逐行清理
+                        lines = analysis.split('\n')
+                        cleaned_lines = []
+                        for line in lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            # 跳过可能的中文解释行（但保留JSON结构）
+                            if re.search(r'[\u4e00-\u9fff]', line) and not line.startswith('"') and not line.startswith('{') and not line.startswith('['):
+                                continue
+                            cleaned_lines.append(line)
+                        analysis = ''.join(cleaned_lines)
+                        
+                        # 再次尝试提取JSON数组
+                        start = analysis.find('[')
+                        end = analysis.rfind(']')
+                        if start != -1 and end != -1 and end > start:
+                            analysis = analysis[start:end+1]
+                        
+                        try:
+                            data = json.loads(analysis)
+                        except json.JSONDecodeError:
+                            # 尝试修复常见问题
+                            # 替换中文引号为英文引号
+                            analysis = analysis.replace('"', '"').replace('"', '"')
+                            analysis = analysis.replace(''', "'").replace(''', "'")
+                            # 移除尾随逗号
+                            analysis = re.sub(r',\s*}', '}', analysis)
+                            analysis = re.sub(r',\s*]', ']', analysis)
+                            try:
+                                data = json.loads(analysis)
+                            except:
+                                # 如果还是失败，尝试找单独的JSON对象
+                                json_match = re.search(r'\{[^{}]*\}', analysis)
+                                if json_match:
+                                    single_obj = json_match.group()
+                                    data = [json.loads(single_obj)]
+                                else:
+                                    # 显示调试信息
+                                    st.error(f"无法解析JSON。原始内容前500字符：")
+                                    st.code(analysis[:500])
+                                    raise json.JSONDecodeError("无法解析AI返回的内容", analysis, 0)
                     
                     df = pd.DataFrame(data)
                     df = df.rename(columns={
