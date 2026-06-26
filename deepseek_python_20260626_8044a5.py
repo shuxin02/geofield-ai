@@ -33,12 +33,12 @@ def save_history(text):
 
 # 页面配置
 st.set_page_config(
-    page_title="GeoField AI - 田野访谈编码助手",
+    page_title="GeoField AI - 田野调查文本编码工作台",
     page_icon="🌍",
     layout="wide"
 )
 
-st.title("🌍 GeoField AI · 田野访谈编码助手")
+st.title("🌍 GeoField AI · 田野调查文本编码工作台")
 st.caption("证据导向型田野资料分析工具 | 支持 TXT 文件")
 
 # 初始化session state
