@@ -1,4 +1,4 @@
-# app.py - 完整版（含历史记录）
+# app.py - 完整版（历史记录在输入框下方，只显示1条）
 import streamlit as st
 import requests
 import json
@@ -25,9 +25,8 @@ def load_history():
 def save_history(text):
     """保存历史记录"""
     history = load_history()
-    # 去重，最新的在前面
     history = [text] + [h for h in history if h != text]
-    history = history[:10]  # 只保留10条
+    history = history[:10]
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
     return history
@@ -93,17 +92,6 @@ with st.sidebar:
 # ==================== Step 1: 研究问题 ====================
 st.header("📌 Step 1: 输入研究问题")
 
-# 显示历史记录
-history = load_history()
-if history:
-    st.caption("📜 历史记录（点击快速填充）：")
-    # 显示最近5条
-    for i, item in enumerate(history[:5]):
-        display_text = item[:60] + "..." if len(item) > 60 else item
-        if st.button(f"📝 {display_text}", key=f"history_{i}", use_container_width=True):
-            st.session_state.research_question = item
-            st.rerun()
-
 research_question = st.text_area(
     "请输入研究问题",
     value=st.session_state.research_question,
@@ -111,10 +99,19 @@ research_question = st.text_area(
     height=100
 )
 
+# 显示历史记录（在输入框下方，居左，小字，只显示最近1条）
+history = load_history()
+if history:
+    latest = history[0]
+    display_text = latest[:80] + "..." if len(latest) > 80 else latest
+    st.caption(f"📜 最近输入：{display_text}")
+    if st.button("📝 点击使用", key="use_latest"):
+        st.session_state.research_question = latest
+        st.rerun()
+
 if st.button("确认研究问题", type="primary"):
     if research_question.strip():
         st.session_state.research_question = research_question.strip()
-        # 保存到历史记录
         save_history(research_question.strip())
         st.session_state.step = 2
         st.rerun()
