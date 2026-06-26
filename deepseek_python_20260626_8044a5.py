@@ -1,4 +1,4 @@
-# app.py - 修复CSV乱码版本
+# app.py - 完整改进版
 import streamlit as st
 import requests
 import json
@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import re
 from collections import Counter
 
-# 尝试导入可视化（可选）
+# 尝试导入可视化
 try:
     import matplotlib.pyplot as plt
     import matplotlib
@@ -47,8 +47,10 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
+if 'deleted_rows' not in st.session_state:
+    st.session_state.deleted_rows = set()
 
-# 侧边栏
+# ==================== 侧边栏 ====================
 with st.sidebar:
     st.header("⚙️ 配置")
     api_key = st.text_input("DeepSeek API Key", type="password")
@@ -56,11 +58,32 @@ with st.sidebar:
         st.session_state.api_key = api_key
     
     st.divider()
+    
+    # 步骤进度
+    st.subheader("📊 进度")
+    steps = [
+        ("1. 研究问题", 1),
+        ("2. 上传访谈", 2),
+        ("3. AI分析", 3),
+        ("4. 编码审核", 4),
+        ("5. 导出报告", 5)
+    ]
+    
+    current_step = st.session_state.step
+    for step_name, step_num in steps:
+        if step_num < current_step:
+            st.success(f"✅ {step_name}")
+        elif step_num == current_step:
+            st.info(f"🔄 {step_name}")
+        else:
+            st.text(f"⏳ {step_name}")
+    
+    st.divider()
     st.info("📌 当前仅支持 TXT 文件")
     if VIZ_AVAILABLE:
         st.success("✅ 可视化支持已启用")
 
-# Step 1: 研究问题
+# ==================== Step 1: 研究问题 ====================
 st.header("📌 Step 1: 输入研究问题")
 research_question = st.text_area(
     "请输入研究问题",
@@ -77,7 +100,7 @@ if st.button("确认研究问题", type="primary"):
     else:
         st.warning("请输入研究问题")
 
-# Step 2: 上传文件
+# ==================== Step 2: 上传文件 ====================
 if st.session_state.step >= 2:
     st.divider()
     st.header("📂 Step 2: 上传访谈文件")
@@ -93,11 +116,9 @@ if st.session_state.step >= 2:
         st.session_state.filename = filename
         
         try:
-            # 尝试UTF-8解码
             try:
                 content = uploaded_file.read().decode('utf-8')
             except UnicodeDecodeError:
-                # 如果UTF-8失败，尝试GBK
                 uploaded_file.seek(0)
                 content = uploaded_file.read().decode('gbk')
             
@@ -108,13 +129,13 @@ if st.session_state.step >= 2:
                 preview = content[:300] + "..." if len(content) > 300 else content
                 st.text(preview)
             
-            # 词云预览
+            # 🔍 词云在这里！勾选后显示
             if VIZ_AVAILABLE and len(content) > 100:
-                if st.checkbox("显示词云"):
+                with st.expander("☁️ 词云可视化", expanded=False):
                     try:
                         words = re.findall(r'[\u4e00-\u9fff]+', content)
                         word_freq = Counter(words)
-                        stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来'}
+                        stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来', '这', '那', '个', '种', '就', '什么', '怎么', '吧', '啊', '呢'}
                         word_freq_filtered = {w: f for w, f in word_freq.items() if len(w) > 1 and w not in stopwords}
                         
                         if word_freq_filtered:
@@ -122,13 +143,16 @@ if st.session_state.step >= 2:
                                 width=800, height=400,
                                 background_color='white',
                                 max_words=100,
-                                colormap='viridis'
+                                colormap='viridis',
+                                font_path=None
                             ).generate_from_frequencies(word_freq_filtered)
                             
                             fig, ax = plt.subplots(figsize=(10, 5))
                             ax.imshow(wordcloud, interpolation='bilinear')
                             ax.axis('off')
                             st.pyplot(fig)
+                        else:
+                            st.info("文本内容不足以生成词云")
                     except Exception as e:
                         st.info(f"词云生成失败：{str(e)}")
             
@@ -142,7 +166,7 @@ if st.session_state.step >= 2:
         except Exception as e:
             st.error(f"文件读取失败：{str(e)}")
 
-# Step 3: AI分析
+# ==================== Step 3: AI分析 ====================
 if st.session_state.step >= 3:
     st.divider()
     st.header("🧠 Step 3: AI分析")
@@ -150,6 +174,7 @@ if st.session_state.step >= 3:
     if not st.session_state.analysis_complete:
         with st.spinner("AI分析中，请稍候..."):
             try:
+                # 🔧 收紧的Prompt - 更严格地控制Memo生成
                 prompt = f"""
 # GeoField AI：田野资料编码分析
 
@@ -159,14 +184,20 @@ if st.session_state.step >= 3:
 1. 所有分析必须基于访谈原文
 2. 不得推测受访者未明确表达的内容
 3. 如果资料不足，请明确写出：【资料不足，无法判断】
+4. **【重要】Memo_hint 和 memo_reason 仅在以下情况填写：**
+   - 该段落包含多个层次的含义，需要进一步分析
+   - 该段落与其他段落存在潜在关联，值得标记
+   - 该段落揭示了超出表面含义的深层逻辑
+   - 其他情况，请留空字符串 ""
+5. **不要**为每个条目都生成Memo，仅在真正有价值时才填写
 
 ## 输出格式
 请以JSON数组格式输出，每个对象包含：
 - id: 序号（从1开始）
 - quote: 原文引用
-- ai_code: 建议编码
-- memo_hint: 备注提示（若无则留空）
-- memo_reason: 备注原因（若无则留空）
+- ai_code: 建议编码（简洁的关键词）
+- memo_hint: 备注提示（仅在真正有价值时填写，否则留空）
+- memo_reason: 备注原因（仅在真正有价值时填写，否则留空）
 
 ## 研究问题
 {st.session_state.research_question}
@@ -199,11 +230,11 @@ if st.session_state.step >= 3:
                     result = response.json()
                     analysis = result["choices"][0]["message"]["content"]
                     
-                    # 清理并解析JSON
                     analysis = analysis.replace('```json', '').replace('```', '').strip()
                     data = json.loads(analysis)
                     
                     df = pd.DataFrame(data)
+                    # 🔧 调整列顺序
                     df = df.rename(columns={
                         "id": "ID",
                         "quote": "原文",
@@ -213,6 +244,11 @@ if st.session_state.step >= 3:
                     })
                     df["研究者编码"] = ""
                     df["研究者Memo"] = ""
+                    df["状态"] = "待审核"  # 添加状态列
+                    
+                    # 确保列顺序正确
+                    column_order = ["ID", "原文", "AI建议编码", "研究者编码", "AI Memo提示", "AI Memo说明", "研究者Memo", "状态"]
+                    df = df[column_order]
                     
                     st.session_state.df = df
                     st.session_state.analysis_complete = True
@@ -234,66 +270,129 @@ if st.session_state.step >= 3:
             st.session_state.step = 4
             st.rerun()
 
-# Step 4: 编码审核
+# ==================== Step 4: 编码审核（交互式） ====================
 if st.session_state.step >= 4 and st.session_state.df is not None:
     st.divider()
     st.header("✏️ Step 4: 编码审核")
     
-    st.info("💡 在「研究者编码」和「研究者Memo」列中填写您的内容")
+    df = st.session_state.df.copy()
     
-    df = st.session_state.df
+    # 过滤已删除的行
+    if st.session_state.deleted_rows:
+        df = df[~df.index.isin(st.session_state.deleted_rows)]
     
     # 统计
     total = len(df)
     coded = df[df["研究者编码"] != ""].shape[0]
-    col1, col2, col3 = st.columns(3)
+    deleted = len(st.session_state.deleted_rows)
+    
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("总编码", total)
     col2.metric("已审核", coded)
     col3.metric("待审核", total - coded)
+    col4.metric("已删除", deleted)
     
     st.divider()
     
-    edited_df = st.data_editor(
-        df,
-        column_config={
-            "ID": st.column_config.NumberColumn("ID", width="small"),
-            "原文": st.column_config.TextColumn("原文", width="large"),
-            "AI建议编码": st.column_config.TextColumn("AI建议编码", width="medium"),
-            "研究者编码": st.column_config.TextColumn("研究者编码 ✏️", width="medium"),
-            "研究者Memo": st.column_config.TextColumn("研究者Memo ✏️", width="large"),
-            "AI Memo提示": st.column_config.TextColumn("AI Memo提示", width="medium"),
-            "AI Memo说明": st.column_config.TextColumn("AI Memo说明", width="medium"),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
+    # 🔧 交互式表格 - 使用自定义列配置
+    st.subheader("📋 编码列表")
+    st.caption("💡 提示：在「研究者编码」列中，可以使用快捷按钮快速操作")
     
-    st.session_state.df = edited_df
+    # 为每一行生成操作按钮
+    for idx, row in df.iterrows():
+        with st.container():
+            cols = st.columns([5, 1, 1, 1])
+            
+            # 显示条目内容
+            with cols[0]:
+                if row["状态"] == "已删除":
+                    st.markdown(f"~~**[{row['ID']}]** {row['原文'][:100]}...~~")
+                    st.caption(f"AI建议: {row['AI建议编码']} | 状态: ❌ 已删除")
+                else:
+                    st.markdown(f"**[{row['ID']}]** {row['原文'][:100]}...")
+                    st.caption(f"AI建议: {row['AI建议编码']}")
+                    if row.get("研究者编码"):
+                        st.success(f"研究者编码: {row['研究者编码']}")
+            
+            # 操作按钮
+            with cols[1]:
+                if row["状态"] != "已删除":
+                    # ✅ 采用按钮 - 直接复制AI建议编码
+                    if st.button(f"✅ 采用", key=f"adopt_{idx}"):
+                        df.at[idx, "研究者编码"] = row["AI建议编码"]
+                        df.at[idx, "状态"] = "已审核"
+                        st.session_state.df = df
+                        st.rerun()
+            
+            with cols[2]:
+                if row["状态"] != "已删除":
+                    # ❌ 不采用按钮 - 弹出选项
+                    if st.button(f"❌ 不采用", key=f"reject_{idx}"):
+                        # 使用expander或对话框
+                        with st.expander(f"选择操作 - 条目 {row['ID']}", expanded=True):
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.button(f"🗑️ 删除", key=f"delete_{idx}"):
+                                    # 删除该行
+                                    st.session_state.deleted_rows.add(idx)
+                                    df.at[idx, "状态"] = "已删除"
+                                    st.session_state.df = df
+                                    st.rerun()
+                            with col_b:
+                                if st.button(f"✏️ 自定义", key=f"custom_{idx}"):
+                                    # 清空研究者编码，让用户手动输入
+                                    df.at[idx, "研究者编码"] = ""
+                                    df.at[idx, "状态"] = "待审核"
+                                    st.session_state.df = df
+                                    st.rerun()
+            
+            with cols[3]:
+                # 显示当前状态
+                if row["状态"] == "已删除":
+                    st.markdown("❌ 已删除")
+                elif row.get("研究者编码"):
+                    st.markdown("✅ 已编码")
+                else:
+                    st.markdown("⏳ 待审核")
+        
+        # 显示Memo（如果有）
+        if row.get("AI Memo提示") and str(row["AI Memo提示"]) != "":
+            with st.container():
+                st.caption(f"💡 Memo提示: {row['AI Memo提示']}")
+        
+        st.divider()
     
-    # 🔧 修复1：导出CSV使用 utf-8-sig
+    # 保存所有修改
+    st.session_state.df = df
+    
+    # 显示统计
+    st.divider()
     col1, col2 = st.columns(2)
     with col1:
-        csv = edited_df.to_csv(index=False, encoding="utf-8-sig")
-        st.download_button(
-            label="📥 导出当前CSV",
-            data=csv,
-            file_name=f"GeoFieldAI_coding_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv"
-        )
+        if st.button("📥 导出CSV编码表"):
+            csv = df[df["状态"] != "已删除"].to_csv(index=False, encoding="utf-8-sig")
+            st.download_button(
+                label="点击下载CSV",
+                data=csv,
+                file_name=f"GeoFieldAI_coding_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
     
     with col2:
         if st.button("📄 生成正式报告", type="primary"):
             st.session_state.step = 5
             st.rerun()
 
-# Step 5: 报告
+# ==================== Step 5: 报告 ====================
 if st.session_state.step >= 5 and st.session_state.df is not None:
     st.divider()
     st.header("📄 Step 5: 正式报告")
     
-    df_final = st.session_state.df
+    df_final = st.session_state.df.copy()
+    # 过滤已删除的行
+    df_final = df_final[df_final["状态"] != "已删除"]
     
-    # Codebook
+    # Codebook（只统计有编码的）
     codebook_df = df_final[df_final["研究者编码"] != ""]
     if len(codebook_df) > 0:
         codebook = codebook_df["研究者编码"].value_counts().reset_index()
@@ -304,7 +403,7 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
         st.dataframe(codebook, use_container_width=True, hide_index=True)
         
         # 可视化图表
-        if VIZ_AVAILABLE:
+        if VIZ_AVAILABLE and len(codebook) > 0:
             try:
                 fig, ax = plt.subplots(figsize=(10, 6))
                 colors = plt.cm.Set3(range(len(codebook)))
@@ -326,10 +425,10 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
     st.subheader("📋 完整编码记录")
     st.dataframe(df_final, use_container_width=True)
     
-    # 🔧 修复2：导出CSV使用 utf-8-sig
+    # 导出
     csv = df_final.to_csv(index=False, encoding="utf-8-sig")
     st.download_button(
-        label="📥 下载CSV报告（Excel可正常打开）",
+        label="📥 下载CSV报告",
         data=csv,
         file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
@@ -342,4 +441,4 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
         st.rerun()
 
 st.divider()
-st.caption("🌍 GeoField AI v0.1 · 支持 TXT 文件")
+st.caption("🌍 GeoField AI v0.2 · 支持快捷编码与可视化")
