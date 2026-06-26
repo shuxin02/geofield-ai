@@ -6,6 +6,24 @@ import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import io
+import re
+from collections import Counter
+
+# 新增：docx 和 图表 相关库
+try:
+    import docx
+except ImportError:
+    docx = None
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')  # 避免在Streamlit中显示问题
+    from wordcloud import WordCloud
+    import numpy as np
+except ImportError:
+    plt = None
+    WordCloud = None
+    np = None
 
 # 页面配置
 st.set_page_config(
@@ -16,7 +34,7 @@ st.set_page_config(
 
 # 标题
 st.title("🌍 GeoField AI · 田野访谈编码助手")
-st.caption("证据导向型田野资料分析工具")
+st.caption("证据导向型田野资料分析工具 | 支持 TXT / DOCX")
 
 # 初始化session state
 if 'step' not in st.session_state:
@@ -35,6 +53,8 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
+if 'has_images' not in st.session_state:
+    st.session_state.has_images = False
 
 # 侧边栏 - API配置
 with st.sidebar:
@@ -64,6 +84,148 @@ with st.sidebar:
         else:
             st.text(f"⏳ {step}")
 
+# ==================== 文本提取函数 ====================
+def extract_text_from_txt(file):
+    """从TXT文件提取文本"""
+    try:
+        content = file.read().decode('utf-8')
+        return content, False
+    except UnicodeDecodeError:
+        try:
+            content = file.read().decode('gbk')
+            return content, False
+        except:
+            raise ValueError("无法解码文件，请确保文件是UTF-8或GBK编码")
+
+def extract_text_from_docx(file):
+    """从DOCX文件提取文本（忽略图片）"""
+    if docx is None:
+        raise ImportError("请安装python-docx库: pip install python-docx")
+    
+    try:
+        doc = docx.Document(io.BytesIO(file.read()))
+        
+        # 检查是否有图片
+        has_images = False
+        for rel in doc.part.rels.values():
+            if "image" in rel.target_ref:
+                has_images = True
+                break
+        
+        # 提取所有段落文本
+        full_text = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text)
+        
+        # 提取表格中的文本
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        full_text.append(cell.text)
+        
+        text = '\n'.join(full_text)
+        
+        return text, has_images
+        
+    except Exception as e:
+        raise ValueError(f"读取DOCX文件失败: {e}")
+
+def extract_text(file, filename):
+    """根据文件类型提取文本"""
+    if filename.endswith('.txt'):
+        return extract_text_from_txt(file)
+    elif filename.endswith('.docx'):
+        return extract_text_from_docx(file)
+    else:
+        raise ValueError(f"不支持的文件格式: {filename}")
+
+# ==================== 可视化函数 ====================
+def create_code_chart(codebook_df):
+    """创建编码分类统计图表"""
+    if plt is None:
+        return None
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # 柱状图
+    colors = plt.cm.Set3(range(len(codebook_df)))
+    bars = ax1.bar(codebook_df['编码'], codebook_df['频次'], color=colors)
+    ax1.set_title('编码频次分布', fontsize=14, fontweight='bold')
+    ax1.set_xlabel('编码类别', fontsize=12)
+    ax1.set_ylabel('频次', fontsize=12)
+    ax1.tick_params(axis='x', rotation=45)
+    
+    # 在柱子上显示数值
+    for bar, value in zip(bars, codebook_df['频次']):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{value}', ha='center', va='bottom', fontsize=10)
+    
+    # 饼图
+    if len(codebook_df) <= 10:  # 饼图适合类别不太多的情况
+        wedges, texts, autotexts = ax2.pie(
+            codebook_df['频次'], 
+            labels=codebook_df['编码'],
+            autopct='%1.1f%%',
+            colors=colors
+        )
+        ax2.set_title('编码占比分布', fontsize=14, fontweight='bold')
+    else:
+        ax2.text(0.5, 0.5, f'编码类别较多\n({len(codebook_df)}类)',
+                ha='center', va='center', fontsize=12)
+        ax2.set_title('编码占比分布', fontsize=14, fontweight='bold')
+    
+    plt.tight_layout()
+    return fig
+
+def create_wordcloud(text):
+    """创建词云图"""
+    if WordCloud is None:
+        return None
+    
+    if not text or len(text) < 10:
+        return None
+    
+    try:
+        # 简单分词（中文）
+        words = re.findall(r'[\u4e00-\u9fff]+', text)
+        word_freq = Counter(words)
+        
+        # 过滤掉单字和常见无意义词
+        stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来'}
+        
+        word_freq_filtered = {w: f for w, f in word_freq.items() if len(w) > 1 and w not in stopwords}
+        
+        if not word_freq_filtered:
+            return None
+        
+        # 生成词云
+        wordcloud = WordCloud(
+            font_path=None,  # 使用默认字体
+            width=800,
+            height=400,
+            background_color='white',
+            max_words=100,
+            relative_scaling=0.5,
+            colormap='viridis'
+        ).generate_from_frequencies(word_freq_filtered)
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.imshow(wordcloud, interpolation='bilinear')
+        ax.axis('off')
+        ax.set_title('访谈文本词云', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        return fig
+        
+    except Exception as e:
+        st.warning(f"词云生成失败: {e}")
+        return None
+
+# ==================== UI 主流程 ====================
+
 # Step 1: 研究问题
 st.header("📌 Step 1: 输入研究问题")
 
@@ -88,25 +250,40 @@ if st.session_state.step >= 2:
     st.header("📂 Step 2: 上传访谈文件")
     
     uploaded_file = st.file_uploader(
-        "上传访谈文本文件 (.txt)",
-        type=['txt'],
-        help="请上传UTF-8编码的txt文件"
+        "上传访谈文本文件 (.txt 或 .docx)",
+        type=['txt', 'docx'],
+        help="支持UTF-8编码的txt文件或docx文件。注意：docx中的图片将被忽略。"
     )
     
     if uploaded_file:
         try:
-            interview_text = uploaded_file.read().decode('utf-8')
-            st.session_state.interview_text = interview_text
-            st.session_state.filename = uploaded_file.name
+            filename = uploaded_file.name
+            st.session_state.filename = filename
             
-            col1, col2 = st.columns(2)
+            # 提取文本
+            text, has_images = extract_text(uploaded_file, filename)
+            st.session_state.interview_text = text
+            st.session_state.has_images = has_images
+            
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.success(f"✔ 文件导入成功：{uploaded_file.name}")
+                st.success(f"✔ 文件导入成功：{filename}")
             with col2:
-                st.info(f"📏 字数：{len(interview_text)}")
+                st.info(f"📏 字数：{len(text)}")
+            with col3:
+                if has_images:
+                    st.warning("🖼️ 检测到图片，已忽略（AI仅分析文本）")
             
             with st.expander("📄 数据预览（前300字）"):
-                st.text(interview_text[:300] + "...")
+                st.text(text[:300] + "..." if len(text) > 300 else text)
+            
+            # 词云预览（可选）
+            if st.checkbox("显示访谈文本词云"):
+                wordcloud_fig = create_wordcloud(text)
+                if wordcloud_fig:
+                    st.pyplot(wordcloud_fig)
+                else:
+                    st.info("文本内容较少或词云生成失败")
             
             if st.button("开始AI分析", type="primary"):
                 if not st.session_state.api_key:
@@ -118,7 +295,7 @@ if st.session_state.step >= 2:
         except Exception as e:
             st.error(f"文件读取失败：{e}")
 
-# Step 3: AI分析
+# Step 3: AI分析（保持不变）
 if st.session_state.step >= 3:
     st.divider()
     st.header("🧠 Step 3: AI分析")
@@ -126,7 +303,7 @@ if st.session_state.step >= 3:
     if not st.session_state.analysis_complete:
         with st.spinner("AI分析中，请稍候..."):
             try:
-                # 构建Prompt
+                # 构建Prompt（同之前）
                 prompt = f"""
 # GeoField AI V2：证据导向型田野资料分析 Prompt
 
@@ -302,7 +479,7 @@ memo_reason：
             st.session_state.step = 4
             st.rerun()
 
-# Step 4: 编码审核（交互式）
+# Step 4: 编码审核
 if st.session_state.step >= 4 and st.session_state.df is not None:
     st.divider()
     st.header("✏️ Step 4: 编码审核")
@@ -324,11 +501,10 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
     
     st.divider()
     
-    # 交互式表格 - 使用st.data_editor
+    # 交互式表格
     st.subheader("📋 编码列表")
     st.caption("点击单元格直接编辑「研究者编码」和「研究者Memo」列")
     
-    # 显示可编辑表格
     edited_df = st.data_editor(
         df,
         column_config={
@@ -353,16 +529,17 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
         num_rows="dynamic"
     )
     
-    # 保存编辑后的数据
     st.session_state.df = edited_df
     
-    # Codebook预览
+    # 可视化区域
     st.divider()
-    st.subheader("📊 Codebook预览")
+    st.subheader("📊 可视化分析")
     
-    # 统计研究者编码
+    # 检查是否有编码
     codebook_df = edited_df[edited_df["研究者编码"] != ""].copy()
+    
     if len(codebook_df) > 0:
+        # 统计编码
         codebook = (
             codebook_df["研究者编码"]
             .value_counts()
@@ -371,11 +548,31 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
         codebook.columns = ["编码", "频次"]
         codebook["占比"] = (codebook["频次"] / codebook["频次"].sum() * 100).round(1).astype(str) + "%"
         
+        # 显示Codebook
+        st.subheader("📊 Codebook预览")
         st.dataframe(codebook, use_container_width=True, hide_index=True)
+        
+        # 图表
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = create_code_chart(codebook)
+            if fig:
+                st.pyplot(fig)
+            else:
+                st.info("图表生成失败")
+        
+        with col2:
+            # 词云（基于已编码的原文）
+            coded_text = " ".join(codebook_df["原文"].tolist())
+            wordcloud_fig = create_wordcloud(coded_text)
+            if wordcloud_fig:
+                st.pyplot(wordcloud_fig)
+            else:
+                st.info("词云生成失败")
     else:
-        st.info("暂无编码，请在表格中填写「研究者编码」")
+        st.info("暂无编码，请在表格中填写「研究者编码」后查看可视化")
     
-    # 生成报告按钮
+    # 导出按钮
     st.divider()
     col1, col2 = st.columns(2)
     
@@ -402,7 +599,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
     df_final = st.session_state.df.copy()
     
     with st.spinner("正在生成报告..."):
-        # Codebook
         codebook_df = df_final[df_final["研究者编码"] != ""].copy()
         
         if len(codebook_df) > 0:
@@ -414,6 +610,22 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             codebook.columns = ["编码", "频次"]
             codebook["占比"] = (codebook["频次"] / codebook["频次"].sum() * 100).round(1).astype(str) + "%"
             
+            # 显示统计图表
+            st.subheader("📊 分析统计")
+            col1, col2 = st.columns(2)
+            with col1:
+                fig = create_code_chart(codebook)
+                if fig:
+                    st.pyplot(fig)
+            with col2:
+                # 访谈词云
+                wordcloud_fig = create_wordcloud(st.session_state.interview_text)
+                if wordcloud_fig:
+                    st.pyplot(wordcloud_fig)
+            
+            st.divider()
+            
+            # 显示Codebook
             st.subheader("📊 Codebook")
             st.dataframe(codebook, use_container_width=True, hide_index=True)
             
@@ -462,7 +674,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
                 type="primary"
             )
             
-            # 重新开始
             st.divider()
             if st.button("🔄 重新开始"):
                 for key in list(st.session_state.keys()):
@@ -477,4 +688,7 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
 
 # 页脚
 st.divider()
-st.caption("🌍 GeoField AI v0.1 · 证据导向型田野资料分析工具")
+st.caption("🌍 GeoField AI v0.2 · 支持 TXT/DOCX · 词云与可视化")
+
+# ==================== 额外功能：批量导出 ====================
+# （可选，如果你需要）
