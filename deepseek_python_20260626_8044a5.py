@@ -1,3 +1,13 @@
+import subprocess
+import sys
+
+# 强制安装 python-docx
+try:
+    import docx
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-docx"])
+    import docx
+    
 # app.py
 import streamlit as st
 import requests
