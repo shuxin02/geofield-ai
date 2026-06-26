@@ -1,6 +1,5 @@
 streamlit
 requests
 pandas
-python-docx
 matplotlib
 wordcloud
