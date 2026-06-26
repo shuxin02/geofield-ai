@@ -1,4 +1,4 @@
-# app.py - 完整版（历史记录在输入框下方，只显示1条）
+# app.py - 完整版（历史记录只在问题变化时保存）
 import streamlit as st
 import requests
 import json
@@ -112,7 +112,10 @@ if history:
 if st.button("确认研究问题", type="primary"):
     if research_question.strip():
         st.session_state.research_question = research_question.strip()
-        save_history(research_question.strip())
+        # 只有当问题发生变化时才保存
+        current_history = load_history()
+        if not current_history or current_history[0] != research_question.strip():
+            save_history(research_question.strip())
         st.session_state.step = 2
         st.rerun()
     else:
