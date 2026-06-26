@@ -1,4 +1,4 @@
-# app.py
+# app.py - 修复CSV乱码版本
 import streamlit as st
 import requests
 import json
@@ -270,9 +270,21 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
     
     st.session_state.df = edited_df
     
-    if st.button("📄 生成报告", type="primary"):
-        st.session_state.step = 5
-        st.rerun()
+    # 🔧 修复1：导出CSV使用 utf-8-sig
+    col1, col2 = st.columns(2)
+    with col1:
+        csv = edited_df.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="📥 导出当前CSV",
+            data=csv,
+            file_name=f"GeoFieldAI_coding_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        if st.button("📄 生成正式报告", type="primary"):
+            st.session_state.step = 5
+            st.rerun()
 
 # Step 5: 报告
 if st.session_state.step >= 5 and st.session_state.df is not None:
@@ -314,10 +326,10 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
     st.subheader("📋 完整编码记录")
     st.dataframe(df_final, use_container_width=True)
     
-    # 导出
+    # 🔧 修复2：导出CSV使用 utf-8-sig
     csv = df_final.to_csv(index=False, encoding="utf-8-sig")
     st.download_button(
-        label="📥 下载CSV报告",
+        label="📥 下载CSV报告（Excel可正常打开）",
         data=csv,
         file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
