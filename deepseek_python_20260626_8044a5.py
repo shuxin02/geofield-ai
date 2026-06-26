@@ -1,4 +1,4 @@
-# app.py - 最终版
+# app.py - 完整版
 import streamlit as st
 import requests
 import json
@@ -58,10 +58,10 @@ if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
 if 'row_status' not in st.session_state:
     st.session_state.row_status = {}
-# 🔑 历史记录缓存 - 只在页面首次加载时从文件读取
+# 历史记录缓存 - 只在页面首次加载时从文件读取
 if 'history_display' not in st.session_state:
     st.session_state.history_display = load_history()
-# 标记是否允许刷新历史记录（默认不允许）
+# 标记是否允许刷新历史记录
 if 'allow_history_refresh' not in st.session_state:
     st.session_state.allow_history_refresh = False
 
@@ -117,18 +117,15 @@ if history:
     st.caption(f"📜 最近输入：{display_text}")
     if st.button("📝 点击使用", key="use_latest"):
         st.session_state.research_question = latest
-        # 允许刷新历史记录（点击"点击使用"时刷新）
         st.session_state.allow_history_refresh = True
         st.rerun()
 
 if st.button("确认研究问题", type="primary"):
     if research_question.strip():
         st.session_state.research_question = research_question.strip()
-        # 保存到文件
         current_history = load_history()
         if not current_history or current_history[0] != research_question.strip():
             save_history(research_question.strip())
-            # 🔑 关键：不更新缓存，不刷新界面
         st.session_state.step = 2
         st.rerun()
     else:
@@ -340,10 +337,23 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
                 
                 with btn_col3:
                     if st.button(f"✏️ 自定义", key=f"custom_{idx}"):
-                        df.at[idx, "研究者编码"] = ""
-                        st.session_state.row_status[idx] = "待审核"
-                        st.session_state.df = df
+                        st.session_state[f"custom_mode_{idx}"] = not st.session_state.get(f"custom_mode_{idx}", False)
                         st.rerun()
+            
+            # 自定义输入框（在行下方展开）
+            if st.session_state.get(f"custom_mode_{idx}", False):
+                new_code = st.text_input(
+                    "输入自定义编码",
+                    key=f"custom_input_{idx}",
+                    placeholder="输入编码后按回车确认",
+                    label_visibility="collapsed"
+                )
+                if new_code:
+                    df.at[idx, "研究者编码"] = new_code
+                    st.session_state.row_status[idx] = "已审核"
+                    st.session_state.df = df
+                    st.session_state[f"custom_mode_{idx}"] = False
+                    st.rerun()
             
             st.divider()
     
@@ -356,12 +366,14 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
         df_export = df.copy()
         df_export = df_export[df_export.index.map(lambda x: st.session_state.row_status.get(x, "待审核") != "已删除")]
         if len(df_export) > 0:
-            csv_data = df_export.to_csv(index=False, encoding='utf-8-sig')
+            # 修复CSV乱码：手动添加BOM头
+            csv_raw = df_export.to_csv(index=False, encoding='utf-8')
+            csv_data = '\ufeff' + csv_raw
             st.download_button(
                 label="📥 导出CSV编码表",
                 data=csv_data,
                 file_name=f"GeoFieldAI_coding_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
+                mime="text/csv; charset=utf-8"
             )
         else:
             st.warning("没有可导出的编码")
@@ -399,12 +411,14 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
         st.subheader("📋 完整编码记录")
         st.dataframe(df_final, use_container_width=True)
         
-        csv_data = df_final.to_csv(index=False, encoding='utf-8-sig')
+        # 修复CSV乱码：手动添加BOM头
+        csv_raw = df_final.to_csv(index=False, encoding='utf-8')
+        csv_data = '\ufeff' + csv_raw
         st.download_button(
             label="📥 下载CSV报告（Excel可正常打开）",
             data=csv_data,
             file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
+            mime="text/csv; charset=utf-8",
             type="primary"
         )
         
