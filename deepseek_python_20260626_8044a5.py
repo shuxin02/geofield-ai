@@ -1,4 +1,4 @@
-# app.py - 最终稳定版
+# app.py - 完整版（含历史记录）
 import streamlit as st
 import requests
 import json
@@ -6,7 +6,31 @@ import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import re
+import os
 from collections import Counter
+
+# ==================== 历史记录功能 ====================
+HISTORY_FILE = "research_history.json"
+
+def load_history():
+    """加载历史记录"""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_history(text):
+    """保存历史记录"""
+    history = load_history()
+    # 去重，最新的在前面
+    history = [text] + [h for h in history if h != text]
+    history = history[:10]  # 只保留10条
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+    return history
 
 # 页面配置
 st.set_page_config(
@@ -68,6 +92,18 @@ with st.sidebar:
 
 # ==================== Step 1: 研究问题 ====================
 st.header("📌 Step 1: 输入研究问题")
+
+# 显示历史记录
+history = load_history()
+if history:
+    st.caption("📜 历史记录（点击快速填充）：")
+    # 显示最近5条
+    for i, item in enumerate(history[:5]):
+        display_text = item[:60] + "..." if len(item) > 60 else item
+        if st.button(f"📝 {display_text}", key=f"history_{i}", use_container_width=True):
+            st.session_state.research_question = item
+            st.rerun()
+
 research_question = st.text_area(
     "请输入研究问题",
     value=st.session_state.research_question,
@@ -78,6 +114,8 @@ research_question = st.text_area(
 if st.button("确认研究问题", type="primary"):
     if research_question.strip():
         st.session_state.research_question = research_question.strip()
+        # 保存到历史记录
+        save_history(research_question.strip())
         st.session_state.step = 2
         st.rerun()
     else:
@@ -363,4 +401,4 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.rerun()
 
 st.divider()
-st.caption("🌍 GeoField AI v0.3 · 支持TXT文件 · 交互式编码")
+st.caption("🌍 GeoField AI v0.3 · 支持TXT文件 · 交互式编码 · 历史记录")
