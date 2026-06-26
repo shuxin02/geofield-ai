@@ -330,7 +330,8 @@ memo_reason：
     "memo_reason":""
   }}
 ]
-
+"""
+                prompt += f"""
 研究问题：
 {st.session_state.research_question}
 
