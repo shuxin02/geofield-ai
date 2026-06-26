@@ -9,22 +9,27 @@ import io
 import re
 from collections import Counter
 
-# 新增：docx 和 图表 相关库
+# 导入docx处理
 try:
-    import docx
+    from docx import Document
+    DOCX_AVAILABLE = True
 except ImportError:
-    docx = None
+    DOCX_AVAILABLE = False
+    Document = None
+
+# 导入可视化
 try:
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.use('Agg')
     from wordcloud import WordCloud
     import numpy as np
+    VIZ_AVAILABLE = True
 except ImportError:
+    VIZ_AVAILABLE = False
     plt = None
     WordCloud = None
     np = None
-    
 # 页面配置
 st.set_page_config(
     page_title="GeoField AI - 田野访谈编码助手",
