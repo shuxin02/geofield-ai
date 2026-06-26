@@ -1,4 +1,4 @@
-# app.py - 完整版（历史记录只在问题变化时保存）
+# app.py - 完整版（历史记录缓存版本）
 import streamlit as st
 import requests
 import json
@@ -58,6 +58,9 @@ if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
 if 'row_status' not in st.session_state:
     st.session_state.row_status = {}
+# 缓存历史记录，只在第一次加载时读取
+if 'history_display' not in st.session_state:
+    st.session_state.history_display = load_history()
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
@@ -99,8 +102,8 @@ research_question = st.text_area(
     height=100
 )
 
-# 显示历史记录（在输入框下方，居左，小字，只显示最近1条）
-history = load_history()
+# 显示历史记录（使用缓存，不实时读取文件）
+history = st.session_state.history_display
 if history:
     latest = history[0]
     display_text = latest[:80] + "..." if len(latest) > 80 else latest
@@ -112,10 +115,12 @@ if history:
 if st.button("确认研究问题", type="primary"):
     if research_question.strip():
         st.session_state.research_question = research_question.strip()
-        # 只有当问题发生变化时才保存
+        # 保存到文件
         current_history = load_history()
         if not current_history or current_history[0] != research_question.strip():
             save_history(research_question.strip())
+            # 更新缓存（这样下次点击"点击使用"时显示新内容）
+            st.session_state.history_display = load_history()
         st.session_state.step = 2
         st.rerun()
     else:
