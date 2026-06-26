@@ -231,8 +231,8 @@ if st.session_state.step >= 3:
     if not st.session_state.analysis_complete:
         with st.spinner("AI分析中，请稍候..."):
             try:
-                # 使用原始Prompt
-                prompt = f"""
+                # 使用 .format() 方法，避免 f-string 解析问题
+                prompt_template = """
 # GeoField AI V2：证据导向型田野资料分析 Prompt
 
 你是一名具有人文地理学、民族志研究和定性研究经验的研究助手。
@@ -330,14 +330,18 @@ memo_reason：
     "memo_reason":""
   }}
 ]
-"""
-                prompt += f"""
+
 研究问题：
-{st.session_state.research_question}
+{research_question}
 
 访谈内容：
-{st.session_state.interview_text}
+{interview_text}
 """
+                
+                prompt = prompt_template.format(
+                    research_question=st.session_state.research_question,
+                    interview_text=st.session_state.interview_text
+                )
 
                 headers = {
                     "Authorization": f"Bearer {st.session_state.api_key}",
@@ -361,8 +365,34 @@ memo_reason：
                     result = response.json()
                     analysis = result["choices"][0]["message"]["content"]
                     
-                    analysis = analysis.replace('```json', '').replace('```', '').strip()
-                    data = json.loads(analysis)
+                    # ---- 增强的JSON解析容错 ----
+                    # 1. 移除 markdown 代码块标记
+                    analysis = re.sub(r'```json\s*', '', analysis)
+                    analysis = re.sub(r'```\s*', '', analysis)
+                    analysis = analysis.strip()
+                    
+                    # 2. 尝试提取 JSON 数组（如果内容中包含）
+                    json_match = re.search(r'\[\s*\{.*\}\s*\]', analysis, re.DOTALL)
+                    if json_match:
+                        analysis = json_match.group()
+                    
+                    # 3. 尝试解析
+                    try:
+                        data = json.loads(analysis)
+                    except json.JSONDecodeError:
+                        # 如果还是失败，尝试更宽松的清理
+                        analysis_cleaned = re.sub(r'[^\{\}\[\],:\"\w\s\.\-]', '', analysis)
+                        json_match = re.search(r'\[\s*\{.*\}\s*\]', analysis_cleaned, re.DOTALL)
+                        if json_match:
+                            analysis_cleaned = json_match.group()
+                            data = json.loads(analysis_cleaned)
+                        else:
+                            json_match = re.search(r'\{.*\}', analysis, re.DOTALL)
+                            if json_match:
+                                single_obj = json_match.group()
+                                data = [json.loads(single_obj)]
+                            else:
+                                raise json.JSONDecodeError("无法解析AI返回的内容", analysis, 0)
                     
                     df = pd.DataFrame(data)
                     df = df.rename(columns={
@@ -387,8 +417,9 @@ memo_reason：
                     
             except json.JSONDecodeError as e:
                 st.error(f"JSON解析失败：{str(e)}")
-                st.text("原始响应：")
-                st.code(analysis if 'analysis' in locals() else "无响应")
+                st.text("原始响应（前500字符）：")
+                st.code(analysis[:500] if 'analysis' in locals() else "无响应")
+                st.info("💡 提示：AI返回的内容可能包含额外文字或格式有误。请尝试重新分析。")
             except requests.exceptions.RequestException as e:
                 st.error(f"网络请求失败：{str(e)}")
                 st.info("💡 请检查API地址是否正确，以及网络连接是否正常")
@@ -400,7 +431,6 @@ memo_reason：
         if st.button("进入编码审核"):
             st.session_state.step = 4
             st.rerun()
-
 # ==================== Step 4: 编码审核 ====================
 if st.session_state.step >= 4 and st.session_state.df is not None:
     st.divider()
