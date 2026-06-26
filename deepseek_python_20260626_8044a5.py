@@ -1,4 +1,4 @@
-# app.py - 完整版（添加词云按钮）
+# app.py - 最终稳定版
 import streamlit as st
 import requests
 import json
@@ -7,21 +7,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import re
 from collections import Counter
-
-# 尝试导入可视化
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib
-    matplotlib.use('Agg')
-    from wordcloud import WordCloud
-    import numpy as np
-    VIZ_AVAILABLE = True
-except ImportError as e:
-    VIZ_AVAILABLE = False
-    plt = None
-    WordCloud = None
-    np = None
-    print(f"可视化导入失败: {e}")
 
 # 页面配置
 st.set_page_config(
@@ -60,18 +45,6 @@ with st.sidebar:
     
     st.divider()
     
-    # 🔧 添加系统状态诊断
-    st.subheader("🔧 系统状态")
-    if VIZ_AVAILABLE:
-        st.success("✅ 词云功能: 已启用")
-        st.success("✅ 图表功能: 已启用")
-    else:
-        st.error("❌ 词云功能: 未启用")
-        st.error("❌ 图表功能: 未启用")
-        st.info("💡 请安装: pip install wordcloud matplotlib")
-    
-    st.divider()
-    
     st.subheader("📊 进度")
     steps = [
         ("1. 研究问题", 1),
@@ -91,7 +64,7 @@ with st.sidebar:
             st.text(f"⏳ {step_name}")
     
     st.divider()
-    st.info("📌 当前仅支持 TXT 文件")
+    st.info("📌 支持 TXT 文件")
 
 # ==================== Step 1: 研究问题 ====================
 st.header("📌 Step 1: 输入研究问题")
@@ -138,48 +111,6 @@ if st.session_state.step >= 2:
             with st.expander("📄 预览（前300字）"):
                 preview = content[:300] + "..." if len(content) > 300 else content
                 st.text(preview)
-            
-            # ============================================
-            # 🔍 词云功能 - 放在显眼位置，带生成按钮
-            # ============================================
-            st.subheader("☁️ 词云可视化")
-            
-            if VIZ_AVAILABLE:
-                if st.button("🎨 生成词云", key="generate_wordcloud"):
-                    with st.spinner("生成词云中..."):
-                        try:
-                            # 提取中文字词
-                            words = re.findall(r'[\u4e00-\u9fff]+', content)
-                            word_freq = Counter(words)
-                            
-                            # 停用词
-                            stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来', '这', '那', '个', '种', '就', '什么', '怎么', '吧', '啊', '呢', '与', '或', '等', '对', '从', '被', '把', '让', '给', '为', '所', '得', '地', '过', '着', '了'}
-                            
-                            word_freq_filtered = {w: f for w, f in word_freq.items() if len(w) > 1 and w not in stopwords}
-                            
-                            if word_freq_filtered:
-                                wordcloud = WordCloud(
-                                    width=800, height=400,
-                                    background_color='white',
-                                    max_words=100,
-                                    colormap='viridis',
-                                    font_path=None
-                                ).generate_from_frequencies(word_freq_filtered)
-                                
-                                fig, ax = plt.subplots(figsize=(10, 5))
-                                ax.imshow(wordcloud, interpolation='bilinear')
-                                ax.axis('off')
-                                st.pyplot(fig)
-                                st.success("✅ 词云生成成功！")
-                            else:
-                                st.warning("文本内容不足以生成词云")
-                        except Exception as e:
-                            st.error(f"词云生成失败：{str(e)}")
-                            st.info("💡 提示：可能需要安装中文字体支持")
-            else:
-                st.warning("⚠️ wordcloud 库未安装，无法生成词云")
-                st.code("pip install wordcloud matplotlib", language="bash")
-                st.info("💡 安装后重启应用即可使用词云功能")
             
             if st.button("开始AI分析", type="primary"):
                 if not st.session_state.api_key:
@@ -247,7 +178,7 @@ if st.session_state.step >= 3:
                     "https://api.deepseek.com/v1/chat/completions",
                     headers=headers,
                     json=payload,
-                    timeout=120
+                    timeout=180
                 )
                 
                 if response.status_code == 200:
@@ -338,8 +269,6 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
                 
                 if row.get("AI Memo提示") and str(row["AI Memo提示"]) != "" and str(row["AI Memo提示"]) != "nan":
                     st.caption(f"💡 Memo提示: {row['AI Memo提示']}")
-                if row.get("AI Memo说明") and str(row["AI Memo说明"]) != "" and str(row["AI Memo说明"]) != "nan":
-                    st.caption(f"📝 Memo说明: {row['AI Memo说明']}")
             
             with col_right:
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -413,24 +342,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             
             st.subheader("📊 Codebook")
             st.dataframe(codebook, use_container_width=True, hide_index=True)
-            
-            if VIZ_AVAILABLE and len(codebook) > 0:
-                try:
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    colors = plt.cm.Set3(range(len(codebook)))
-                    bars = ax.bar(codebook['编码'], codebook['频次'], color=colors)
-                    ax.set_title('编码频次分布', fontsize=14, fontweight='bold')
-                    ax.set_xlabel('编码类别')
-                    ax.set_ylabel('频次')
-                    ax.tick_params(axis='x', rotation=45)
-                    
-                    for bar, value in zip(bars, codebook['频次']):
-                        ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
-                               f'{value}', ha='center', va='bottom')
-                    
-                    st.pyplot(fig)
-                except Exception as e:
-                    st.info(f"图表生成失败：{str(e)}")
         else:
             st.info("暂无编码数据")
         
@@ -452,4 +363,4 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.rerun()
 
 st.divider()
-st.caption("🌍 GeoField AI v0.3 · 支持快捷编码与可视化")
+st.caption("🌍 GeoField AI v0.3 · 支持TXT文件 · 交互式编码")
