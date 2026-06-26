@@ -1,4 +1,4 @@
-# app.py 
+# app.py
 import streamlit as st
 import requests
 import json
@@ -17,14 +17,14 @@ except ImportError:
 try:
     import matplotlib.pyplot as plt
     import matplotlib
-    matplotlib.use('Agg')  # 避免在Streamlit中显示问题
+    matplotlib.use('Agg')
     from wordcloud import WordCloud
     import numpy as np
 except ImportError:
     plt = None
     WordCloud = None
     np = None
-
+    
 # 页面配置
 st.set_page_config(
     page_title="GeoField AI - 田野访谈编码助手",
