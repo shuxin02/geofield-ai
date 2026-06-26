@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import io
 import re
 from collections import Counter
-pip install python-docx
+
 # 新增：docx 和 图表 相关库
 try:
     import docx
