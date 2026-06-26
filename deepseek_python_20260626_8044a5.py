@@ -1,4 +1,4 @@
-# app.py - 完整版
+# app.py - 完整版（支持多API服务商）
 import streamlit as st
 import requests
 import json
@@ -56,6 +56,10 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
+if 'api_url' not in st.session_state:
+    st.session_state.api_url = "https://api.deepseek.com/v1/chat/completions"
+if 'model_name' not in st.session_state:
+    st.session_state.model_name = "deepseek-chat"
 if 'row_status' not in st.session_state:
     st.session_state.row_status = {}
 # 历史记录缓存 - 只在页面首次加载时从文件读取
@@ -68,12 +72,61 @@ if 'allow_history_refresh' not in st.session_state:
 # ==================== 侧边栏 ====================
 with st.sidebar:
     st.header("⚙️ 配置")
-    api_key = st.text_input("DeepSeek API Key", type="password")
+    
+    # ---- API 配置 ----
+    st.subheader("🔑 API 设置")
+    
+    api_provider = st.selectbox(
+        "API 服务商",
+        options=["DeepSeek", "OpenAI", "自定义"],
+        index=0,
+        help="选择您使用的 API 服务商，或选择「自定义」手动输入"
+    )
+    
+    # 根据选择设置默认值
+    if api_provider == "DeepSeek":
+        default_url = "https://api.deepseek.com/v1/chat/completions"
+        default_model = "deepseek-chat"
+    elif api_provider == "OpenAI":
+        default_url = "https://api.openai.com/v1/chat/completions"
+        default_model = "gpt-4o-mini"
+    else:
+        default_url = "https://api.deepseek.com/v1/chat/completions"
+        default_model = "deepseek-chat"
+    
+    # 自定义模式显示输入框，否则显示只读信息
+    if api_provider == "自定义":
+        api_url = st.text_input(
+            "API 地址",
+            value=default_url,
+            help="请输入完整的 API 端点 URL，例如：https://api.openai.com/v1/chat/completions"
+        )
+        model_name = st.text_input(
+            "模型名称",
+            value=default_model,
+            help="请输入模型名称，例如：gpt-4o、deepseek-chat 等"
+        )
+    else:
+        st.text_input("API 地址", value=default_url, disabled=True)
+        st.text_input("模型名称", value=default_model, disabled=True)
+        api_url = default_url
+        model_name = default_model
+    
+    api_key = st.text_input(
+        "API Key",
+        type="password",
+        help="请输入您的 API Key。注意：Key 不会存储在服务器上"
+    )
+    
+    # 保存到 session state
     if api_key:
         st.session_state.api_key = api_key
+        st.session_state.api_url = api_url
+        st.session_state.model_name = model_name
     
     st.divider()
     
+    # ---- 进度 ----
     st.subheader("📊 进度")
     steps = [
         ("1. 研究问题", 1),
@@ -291,13 +344,13 @@ memo_reason：
                 }
                 
                 payload = {
-                    "model": "deepseek-chat",
+                    "model": st.session_state.model_name,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.2
                 }
                 
                 response = requests.post(
-                    "https://api.deepseek.com/v1/chat/completions",
+                    st.session_state.api_url,
                     headers=headers,
                     json=payload,
                     timeout=180
@@ -329,12 +382,15 @@ memo_reason：
                     st.session_state.step = 4
                     st.rerun()
                 else:
-                    st.error(f"API调用失败：{response.text}")
+                    st.error(f"API调用失败 (HTTP {response.status_code})：{response.text}")
                     
             except json.JSONDecodeError as e:
                 st.error(f"JSON解析失败：{str(e)}")
                 st.text("原始响应：")
                 st.code(analysis if 'analysis' in locals() else "无响应")
+            except requests.exceptions.RequestException as e:
+                st.error(f"网络请求失败：{str(e)}")
+                st.info("💡 请检查API地址是否正确，以及网络连接是否正常")
             except Exception as e:
                 st.error(f"分析失败：{str(e)}")
     
@@ -487,4 +543,4 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.rerun()
 
 st.divider()
-st.caption("🌍 GeoField AI v0.3 · 支持TXT文件 · 交互式编码 · 历史记录")
+st.caption("🌍 GeoField AI v0.3 · 支持TXT文件 · 交互式编码 · 历史记录 · 多API支持")
