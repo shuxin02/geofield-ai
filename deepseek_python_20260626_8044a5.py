@@ -1,4 +1,4 @@
-# app.py - 完全修复版
+# app.py - 完整版（添加词云按钮）
 import streamlit as st
 import requests
 import json
@@ -16,11 +16,12 @@ try:
     from wordcloud import WordCloud
     import numpy as np
     VIZ_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     VIZ_AVAILABLE = False
     plt = None
     WordCloud = None
     np = None
+    print(f"可视化导入失败: {e}")
 
 # 页面配置
 st.set_page_config(
@@ -47,7 +48,6 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'api_key' not in st.session_state:
     st.session_state.api_key = ""
-# 使用字典管理每一行的状态: {index: "待审核"|"已审核"|"已删除"}
 if 'row_status' not in st.session_state:
     st.session_state.row_status = {}
 
@@ -57,6 +57,18 @@ with st.sidebar:
     api_key = st.text_input("DeepSeek API Key", type="password")
     if api_key:
         st.session_state.api_key = api_key
+    
+    st.divider()
+    
+    # 🔧 添加系统状态诊断
+    st.subheader("🔧 系统状态")
+    if VIZ_AVAILABLE:
+        st.success("✅ 词云功能: 已启用")
+        st.success("✅ 图表功能: 已启用")
+    else:
+        st.error("❌ 词云功能: 未启用")
+        st.error("❌ 图表功能: 未启用")
+        st.info("💡 请安装: pip install wordcloud matplotlib")
     
     st.divider()
     
@@ -80,8 +92,6 @@ with st.sidebar:
     
     st.divider()
     st.info("📌 当前仅支持 TXT 文件")
-    if VIZ_AVAILABLE:
-        st.success("✅ 可视化支持已启用")
 
 # ==================== Step 1: 研究问题 ====================
 st.header("📌 Step 1: 输入研究问题")
@@ -129,32 +139,47 @@ if st.session_state.step >= 2:
                 preview = content[:300] + "..." if len(content) > 300 else content
                 st.text(preview)
             
-            # 🔍 词云 - 放在更明显的位置，默认展开
-            if VIZ_AVAILABLE and len(content) > 100:
-                st.subheader("☁️ 词云可视化")
-                try:
-                    words = re.findall(r'[\u4e00-\u9fff]+', content)
-                    word_freq = Counter(words)
-                    stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来', '这', '那', '个', '种', '就', '什么', '怎么', '吧', '啊', '呢'}
-                    word_freq_filtered = {w: f for w, f in word_freq.items() if len(w) > 1 and w not in stopwords}
-                    
-                    if word_freq_filtered:
-                        wordcloud = WordCloud(
-                            width=800, height=400,
-                            background_color='white',
-                            max_words=100,
-                            colormap='viridis',
-                            font_path=None
-                        ).generate_from_frequencies(word_freq_filtered)
-                        
-                        fig, ax = plt.subplots(figsize=(10, 5))
-                        ax.imshow(wordcloud, interpolation='bilinear')
-                        ax.axis('off')
-                        st.pyplot(fig)
-                    else:
-                        st.info("文本内容不足以生成词云")
-                except Exception as e:
-                    st.info(f"词云生成失败：{str(e)}")
+            # ============================================
+            # 🔍 词云功能 - 放在显眼位置，带生成按钮
+            # ============================================
+            st.subheader("☁️ 词云可视化")
+            
+            if VIZ_AVAILABLE:
+                if st.button("🎨 生成词云", key="generate_wordcloud"):
+                    with st.spinner("生成词云中..."):
+                        try:
+                            # 提取中文字词
+                            words = re.findall(r'[\u4e00-\u9fff]+', content)
+                            word_freq = Counter(words)
+                            
+                            # 停用词
+                            stopwords = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '来', '这', '那', '个', '种', '就', '什么', '怎么', '吧', '啊', '呢', '与', '或', '等', '对', '从', '被', '把', '让', '给', '为', '所', '得', '地', '过', '着', '了'}
+                            
+                            word_freq_filtered = {w: f for w, f in word_freq.items() if len(w) > 1 and w not in stopwords}
+                            
+                            if word_freq_filtered:
+                                wordcloud = WordCloud(
+                                    width=800, height=400,
+                                    background_color='white',
+                                    max_words=100,
+                                    colormap='viridis',
+                                    font_path=None
+                                ).generate_from_frequencies(word_freq_filtered)
+                                
+                                fig, ax = plt.subplots(figsize=(10, 5))
+                                ax.imshow(wordcloud, interpolation='bilinear')
+                                ax.axis('off')
+                                st.pyplot(fig)
+                                st.success("✅ 词云生成成功！")
+                            else:
+                                st.warning("文本内容不足以生成词云")
+                        except Exception as e:
+                            st.error(f"词云生成失败：{str(e)}")
+                            st.info("💡 提示：可能需要安装中文字体支持")
+            else:
+                st.warning("⚠️ wordcloud 库未安装，无法生成词云")
+                st.code("pip install wordcloud matplotlib", language="bash")
+                st.info("💡 安装后重启应用即可使用词云功能")
             
             if st.button("开始AI分析", type="primary"):
                 if not st.session_state.api_key:
@@ -243,7 +268,6 @@ if st.session_state.step >= 3:
                     df["研究者编码"] = ""
                     df["研究者Memo"] = ""
                     
-                    # 确保列顺序正确
                     column_order = ["ID", "原文", "AI建议编码", "研究者编码", "AI Memo提示", "AI Memo说明", "研究者Memo"]
                     df = df[column_order]
                     
@@ -267,19 +291,17 @@ if st.session_state.step >= 3:
             st.session_state.step = 4
             st.rerun()
 
-# ==================== Step 4: 编码审核（交互式） ====================
+# ==================== Step 4: 编码审核 ====================
 if st.session_state.step >= 4 and st.session_state.df is not None:
     st.divider()
     st.header("✏️ Step 4: 编码审核")
     
     df = st.session_state.df.copy()
     
-    # 初始化行状态（如果还没有）
     for idx in df.index:
         if idx not in st.session_state.row_status:
             st.session_state.row_status[idx] = "待审核"
     
-    # 统计
     total = len(df)
     coded = df[df["研究者编码"] != ""].shape[0]
     deleted = sum(1 for status in st.session_state.row_status.values() if status == "已删除")
@@ -292,44 +314,37 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
     
     st.divider()
     
-    # 🔧 交互式审核 - 逐行处理
     for idx, row in df.iterrows():
         status = st.session_state.row_status.get(idx, "待审核")
         
         with st.container():
-            # 如果是已删除状态，显示灰色
             if status == "已删除":
                 st.markdown(f"~~**[{row['ID']}]** {row['原文'][:150]}...~~")
                 st.caption(f"AI建议: {row['AI建议编码']} | 状态: ❌ 已删除")
                 st.divider()
                 continue
             
-            # 显示条目
             col_left, col_right = st.columns([3, 1])
             
             with col_left:
                 st.markdown(f"**[{row['ID']}]** {row['原文'][:150]}...")
                 st.caption(f"AI建议编码: {row['AI建议编码']}")
                 
-                # 显示当前编码（如果有）
                 current_code = df.at[idx, "研究者编码"]
                 if current_code and str(current_code) != "":
                     st.success(f"研究者编码: {current_code}")
                 else:
                     st.info("等待编码...")
                 
-                # 显示Memo（如果有）
                 if row.get("AI Memo提示") and str(row["AI Memo提示"]) != "" and str(row["AI Memo提示"]) != "nan":
                     st.caption(f"💡 Memo提示: {row['AI Memo提示']}")
                 if row.get("AI Memo说明") and str(row["AI Memo说明"]) != "" and str(row["AI Memo说明"]) != "nan":
                     st.caption(f"📝 Memo说明: {row['AI Memo说明']}")
             
             with col_right:
-                # 操作按钮
                 btn_col1, btn_col2, btn_col3 = st.columns(3)
                 
                 with btn_col1:
-                    # ✅ 采用按钮
                     if st.button(f"✅ 采用", key=f"adopt_{idx}"):
                         df.at[idx, "研究者编码"] = row["AI建议编码"]
                         st.session_state.row_status[idx] = "已审核"
@@ -337,7 +352,6 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
                         st.rerun()
                 
                 with btn_col2:
-                    # ❌ 删除按钮
                     if st.button(f"🗑️ 删除", key=f"delete_{idx}"):
                         st.session_state.row_status[idx] = "已删除"
                         df.at[idx, "研究者编码"] = "（已删除）"
@@ -345,26 +359,21 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
                         st.rerun()
                 
                 with btn_col3:
-                    # ✏️ 自定义按钮
                     if st.button(f"✏️ 自定义", key=f"custom_{idx}"):
-                        df.at[idx, "研究者编码"] = ""  # 清空，等待用户输入
+                        df.at[idx, "研究者编码"] = ""
                         st.session_state.row_status[idx] = "待审核"
                         st.session_state.df = df
                         st.rerun()
             
             st.divider()
     
-    # 保存修改到session state
     st.session_state.df = df
     
-    # 底部操作栏
     st.divider()
     col1, col2 = st.columns(2)
     
     with col1:
-        # 导出CSV - 使用utf-8-sig编码，并添加BOM头
         df_export = df.copy()
-        # 过滤已删除的行
         df_export = df_export[df_export.index.map(lambda x: st.session_state.row_status.get(x, "待审核") != "已删除")]
         if len(df_export) > 0:
             csv_data = df_export.to_csv(index=False, encoding='utf-8-sig')
@@ -388,7 +397,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
     st.header("📄 Step 5: 正式报告")
     
     df_final = st.session_state.df.copy()
-    # 过滤已删除的行
     df_final = df_final[df_final.index.map(lambda x: st.session_state.row_status.get(x, "待审核") != "已删除")]
     
     if len(df_final) == 0:
@@ -397,7 +405,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.session_state.step = 4
             st.rerun()
     else:
-        # Codebook
         codebook_df = df_final[df_final["研究者编码"] != ""]
         if len(codebook_df) > 0:
             codebook = codebook_df["研究者编码"].value_counts().reset_index()
@@ -407,7 +414,6 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.subheader("📊 Codebook")
             st.dataframe(codebook, use_container_width=True, hide_index=True)
             
-            # 可视化图表
             if VIZ_AVAILABLE and len(codebook) > 0:
                 try:
                     fig, ax = plt.subplots(figsize=(10, 6))
@@ -426,13 +432,11 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
                 except Exception as e:
                     st.info(f"图表生成失败：{str(e)}")
         else:
-            st.info("暂无编码数据，请在Step 4中完成编码")
+            st.info("暂无编码数据")
         
-        # 完整表格
         st.subheader("📋 完整编码记录")
         st.dataframe(df_final, use_container_width=True)
         
-        # 导出CSV - 使用utf-8-sig
         csv_data = df_final.to_csv(index=False, encoding='utf-8-sig')
         st.download_button(
             label="📥 下载CSV报告（Excel可正常打开）",
