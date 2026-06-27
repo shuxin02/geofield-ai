@@ -149,7 +149,7 @@ with st.sidebar:
     st.info("📌 支持 TXT 文件")
 
 # ==================== Step 1: 研究问题 ====================
-st.header("📌 Step 1: 输入研究问题")
+st.header("📌 Step 1: 研究问题")
 
 research_question = st.text_area(
     "请输入研究问题",
@@ -598,7 +598,7 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
         csv_raw = df_final.to_csv(index=False, encoding='utf-8')
         csv_data = '\ufeff' + csv_raw
         st.download_button(
-            label="📥 下载CSV报告（Excel可正常打开）",
+            label="📥 下载CSV报告",
             data=csv_data,
             file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv; charset=utf-8",
