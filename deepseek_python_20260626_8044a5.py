@@ -580,29 +580,28 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.rerun()
     else:
         codebook_df = df_final[df_final["研究者编码"] != ""]
-
-    if len(codebook_df) > 0:
-    codebook_md = "| 编码 | 频次 | 占比 |\n|------|------|------|\n"
-    for _, r in codebook.iterrows():
-        codebook_md += f"| {r['编码']} | {r['频次']} | {r['占比']} |\n"
-else:
-    codebook_md = "（暂无编码数据）"
+        if len(codebook_df) > 0:
+            codebook = codebook_df["研究者编码"].value_counts().reset_index()
+            codebook.columns = ["编码", "频次"]
+            codebook["占比"] = (codebook["频次"] / codebook["频次"].sum() * 100).round(1).astype(str) + "%"
+            st.subheader("📊 Codebook")
+            st.dataframe(codebook, use_container_width=True, hide_index=True)
+        else:
+            st.info("暂无编码数据")
         
         st.subheader("📋 完整编码记录")
         st.dataframe(df_final, use_container_width=True)
         
-        # CSV 下载
         csv_raw = df_final.to_csv(index=False, encoding='utf-8')
         csv_data = '\ufeff' + csv_raw
         st.download_button(
-            label="📥 下载CSV报告",
+            label="📥 下载CSV报告（Excel可正常打开）",
             data=csv_data,
             file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv; charset=utf-8",
             type="primary"
         )
 
-        # Markdown 报告
         rows_md = ""
         for _, row in df_final.iterrows():
             rows_md += f"**[{row['ID']}]** {row['原文']}\n\n"
@@ -610,18 +609,22 @@ else:
             rows_md += f"- 研究者编码：{row['研究者编码'] or '（未填写）'}\n"
             rows_md += f"- Memo：{str(row['研究者Memo']) if str(row['研究者Memo']) not in ['', 'nan'] else '（无）'}\n\n---\n\n"
 
-        if len(codebook_df) > 0:
-    codebook_md = "| 编码 | 频次 | 占比 |\n|------|------|------|\n"
-    for _, r in codebook.iterrows():
-        codebook_md += f"| {r['编码']} | {r['频次']} | {r['占比']} |\n"
-else:
-    codebook_md = "（暂无编码数据）"
+        codebook_df2 = df_final[df_final["研究者编码"] != ""]
+        if len(codebook_df2) > 0:
+            cb = codebook_df2["研究者编码"].value_counts().reset_index()
+            cb.columns = ["编码", "频次"]
+            cb["占比"] = (cb["频次"] / cb["频次"].sum() * 100).round(1).astype(str) + "%"
+            codebook_md = "| 编码 | 频次 | 占比 |\n|------|------|------|\n"
+            for _, r in cb.iterrows():
+                codebook_md += f"| {r['编码']} | {r['频次']} | {r['占比']} |\n"
+        else:
+            codebook_md = "（暂无编码数据）"
 
         report_md = f"""# GeoField AI 分析报告
 
-**生成时间：** {datetime.now().strftime('%Y%m%d_%H%M')}  
-**研究问题：** {st.session_state.research_question}  
-**编码条目数：** {len(df_final)}  
+**生成时间：** {datetime.now().strftime('%Y%m%d_%H%M')}
+**研究问题：** {st.session_state.research_question}
+**编码条目数：** {len(df_final)}
 
 ---
 
@@ -647,7 +650,7 @@ else:
             mime="text/markdown",
             type="secondary"
         )
-        
+
         if st.button("🔄 重新开始"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
