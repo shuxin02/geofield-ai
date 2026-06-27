@@ -613,7 +613,12 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             rows_md += f"- 研究者编码：{row['研究者编码'] or '（未填写）'}\n"
             rows_md += f"- Memo：{str(row['研究者Memo']) if str(row['研究者Memo']) not in ['', 'nan'] else '（无）'}\n\n---\n\n"
 
-        codebook_md = codebook.to_markdown(index=False) if len(codebook_df) > 0 else "（暂无编码数据）"
+        if len(codebook_df) > 0:
+    codebook_md = "| 编码 | 频次 | 占比 |\n|------|------|------|\n"
+    for _, r in codebook.iterrows():
+        codebook_md += f"| {r['编码']} | {r['频次']} | {r['占比']} |\n"
+else:
+    codebook_md = "（暂无编码数据）"
 
         report_md = f"""# GeoField AI 分析报告
 
