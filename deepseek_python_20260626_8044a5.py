@@ -566,6 +566,7 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
         st.rerun()
 
 # ==================== Step 5: 报告 ====================
+# ==================== Step 5: 报告 ====================
 if st.session_state.step >= 5 and st.session_state.df is not None:
     st.divider()
     st.header("📄 Step 5: 正式报告")
@@ -593,7 +594,7 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
         st.subheader("📋 完整编码记录")
         st.dataframe(df_final, use_container_width=True)
         
-        # 修复CSV乱码：手动添加BOM头
+        # CSV 下载
         csv_raw = df_final.to_csv(index=False, encoding='utf-8')
         csv_data = '\ufeff' + csv_raw
         st.download_button(
@@ -602,6 +603,47 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv; charset=utf-8",
             type="primary"
+        )
+
+        # Markdown 报告
+        rows_md = ""
+        for _, row in df_final.iterrows():
+            rows_md += f"**[{row['ID']}]** {row['原文']}\n\n"
+            rows_md += f"- AI建议编码：{row['AI建议编码']}\n"
+            rows_md += f"- 研究者编码：{row['研究者编码'] or '（未填写）'}\n"
+            rows_md += f"- Memo：{str(row['研究者Memo']) if str(row['研究者Memo']) not in ['', 'nan'] else '（无）'}\n\n---\n\n"
+
+        codebook_md = codebook.to_markdown(index=False) if len(codebook_df) > 0 else "（暂无编码数据）"
+
+        report_md = f"""# GeoField AI 分析报告
+
+**生成时间：** {datetime.now().strftime('%Y%m%d_%H%M')}  
+**研究问题：** {st.session_state.research_question}  
+**编码条目数：** {len(df_final)}  
+
+---
+
+## Codebook
+
+{codebook_md}
+
+---
+
+## 逐条编码记录
+
+{rows_md}
+
+---
+
+*本报告由 GeoField AI 生成，最终解释权属于研究者。*
+"""
+
+        st.download_button(
+            label="📄 下载Markdown报告",
+            data=report_md,
+            file_name=f"GeoFieldAI_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown",
+            type="secondary"
         )
         
         if st.button("🔄 重新开始"):
