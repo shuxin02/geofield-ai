@@ -566,7 +566,6 @@ if st.session_state.step >= 4 and st.session_state.df is not None:
         st.rerun()
 
 # ==================== Step 5: 报告 ====================
-# ==================== Step 5: 报告 ====================
 if st.session_state.step >= 5 and st.session_state.df is not None:
     st.divider()
     st.header("📄 Step 5: 正式报告")
@@ -581,15 +580,13 @@ if st.session_state.step >= 5 and st.session_state.df is not None:
             st.rerun()
     else:
         codebook_df = df_final[df_final["研究者编码"] != ""]
-        if len(codebook_df) > 0:
-            codebook = codebook_df["研究者编码"].value_counts().reset_index()
-            codebook.columns = ["编码", "频次"]
-            codebook["占比"] = (codebook["频次"] / codebook["频次"].sum() * 100).round(1).astype(str) + "%"
-            
-            st.subheader("📊 Codebook")
-            st.dataframe(codebook, use_container_width=True, hide_index=True)
-        else:
-            st.info("暂无编码数据")
+
+    if len(codebook_df) > 0:
+    codebook_md = "| 编码 | 频次 | 占比 |\n|------|------|------|\n"
+    for _, r in codebook.iterrows():
+        codebook_md += f"| {r['编码']} | {r['频次']} | {r['占比']} |\n"
+else:
+    codebook_md = "（暂无编码数据）"
         
         st.subheader("📋 完整编码记录")
         st.dataframe(df_final, use_container_width=True)
