@@ -39,7 +39,7 @@ st.set_page_config(
 )
 
 st.title("🌍 GeoField AI · 田野调查文本编码工作台")
-st.caption("证据导向型田野资料分析工具 | 支持 TXT 文件")
+st.caption("证据导向型田野资料分析工具 | 以扎根理论为基础的开放式编码助手 | 支持 TXT 文件")
 
 # 初始化session state
 if 'step' not in st.session_state:
